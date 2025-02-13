@@ -3,6 +3,8 @@ import cors from 'cors';
 import { AppDataSource, ensureDatabaseExists } from './config/DataSource';
 import dotenv from 'dotenv';
 import { Account } from './entities/Account';
+import { graphqlHTTP } from 'express-graphql';
+import schema from './graphql/schema';
 
 dotenv.config();
 
@@ -11,6 +13,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+app.use(
+  '/graphql',
+  graphqlHTTP({
+    schema,
+    graphiql: true, 
+  })
+);
 
 const populateDatabase = async () => {
   console.log('Populating the database with initial data...');
