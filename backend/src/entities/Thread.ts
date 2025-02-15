@@ -7,7 +7,7 @@ export class Thread {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToMany(() => Account)
+  @ManyToMany(() => Account, account => account.threads)
   @JoinTable()
   participants: Account[];
 

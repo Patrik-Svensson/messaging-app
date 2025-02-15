@@ -11,7 +11,10 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
 
 app.use(
@@ -28,6 +31,7 @@ const populateDatabase = async () => {
   const initialUsers = [
     { username: 'john_doe', password: 'password123' },
     { username: 'jane_smith', password: 'securepassword' },
+    { username: 'patrik_svensson', password: 'hej123' },
   ];
   await AppDataSource.getRepository(Account).save(initialUsers); 
 };

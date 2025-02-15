@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
 import { Account } from './Account';
 import { Thread } from './Thread';
 
@@ -10,8 +10,11 @@ export class Message {
   @Column('text')
   text: string;
 
-  @Column()
+  @CreateDateColumn()
   creationDate: Date;
+
+  @Column('timestamp', { default: () => 'CURRENT_TIMESTAMP' })
+  timestamp: Date;
 
   @ManyToOne(() => Account)
   @JoinColumn({ name: 'authorId' })

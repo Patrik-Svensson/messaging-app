@@ -18,9 +18,7 @@ const Home = () => {
         query: `
           query {
             login(username: "${username}", password: "${password}") {
-              id
               username
-              token
             }
           }
         `,
@@ -29,8 +27,10 @@ const Home = () => {
 
     const data = await response.json();
 
-    if (data?.data?.login?.token) {
-      localStorage.setItem('jwt', data.data.login.token);
+    console.log(data)
+
+    if (data?.data?.login?.username) {
+      localStorage.setItem('username', username);
 
       window.location.href = '/messages';
     } else {

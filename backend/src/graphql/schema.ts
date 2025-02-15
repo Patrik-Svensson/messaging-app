@@ -1,39 +1,23 @@
 import { GraphQLObjectType, GraphQLSchema, GraphQLString, GraphQLList } from 'graphql';
-import jwt from 'jsonwebtoken';
+import { GraphQLFieldResolver } from 'graphql';
+import { ThreadType } from './types/ThreadType';
+import { threadResolvers } from './resolvers/threadResolvers';
+import { userResolvers } from './resolvers/userResolvers';
 import { AppDataSource } from '../config/DataSource';
 import { Account } from '../entities/Account';
+import jwt from 'jsonwebtoken';
 import { Thread } from '../entities/Thread';
-import { In } from 'typeorm';
+import { UserType } from './types/UserType';
+import { Message } from '../entities/Message';
 
-const MessageType = new GraphQLObjectType({
-  name: 'Message',
-  fields: {
-    id: { type: GraphQLString },
-    content: { type: GraphQLString },
-  },
-});
+interface Context {
+  user: {
+    id: string;
+    username: string;
+  } | null;
+}
 
-const UserType = new GraphQLObjectType({
-    name: 'User',
-    fields: {
-      id: { type: GraphQLString },
-      username: { type: GraphQLString },
-      token: { type: GraphQLString },
-    },
-  });
-
-const ThreadType = new GraphQLObjectType({
-    name: 'Thread',
-    fields: {
-      id: { type: GraphQLString },
-      title: { type: GraphQLString },
-      messages: { type: new GraphQLList(MessageType) },
-      participants: { type: new GraphQLList(UserType) },
-    },
-  });
-
-// TODO: add hashed passwords
-const RootQuery = new GraphQLObjectType({
+const RootQuery = new GraphQLObjectType<any, Context>({
   name: 'Query',
   fields: {
     login: {
@@ -61,24 +45,43 @@ const RootQuery = new GraphQLObjectType({
     },
     threads: {
       type: new GraphQLList(ThreadType),
-      async resolve(_, __, { user }) {
-        if (!user) throw new Error('Not authenticated');
-
-        const threadRepo = AppDataSource.getRepository(Thread);
-        const threads = await threadRepo.find({ where: { participants: user.id } });
-
-        return threads;
+      args: {
+        username: { type: GraphQLString },
       },
+      resolve: (parent, args, context) => {
+        return threadResolvers.threads(parent, args, context);
+      }
     },
-    // FOR TESTING WITH GRAPHIQL
-    allThreads: {
+    getThreads: {
       type: new GraphQLList(ThreadType),
-      async resolve() {
-        const threadRepo = AppDataSource.getRepository(Thread);
-        const threads = await threadRepo.find();
-        return threads;
+      args: {
+        username: { type: GraphQLString },
       },
+      resolve: async (parent, { username }, context) => {
+        const threads = await AppDataSource.getRepository(Thread).find({
+          relations: ["participants", "messages", "messages.author"], 
+        });
+      
+        const filteredThreads = threads.filter(thread => 
+          thread.participants.some(participant => participant.username === username)
+        );
+
+        filteredThreads.forEach(thread => {
+          thread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        });
+      
+        return filteredThreads;
+      }      
     },
+    getUsersExcluding: {
+        type: new GraphQLList(UserType),
+        args: {
+          username: { type: GraphQLString },
+        },
+        resolve: (parent, args, context) => {
+          return userResolvers.getUsers(args.username);
+        }
+      },          
   },
 });
 
@@ -89,26 +92,56 @@ const Mutation = new GraphQLObjectType({
       type: ThreadType,
       args: {
         title: { type: GraphQLString },
-        participants: { type: new GraphQLList(GraphQLString) },
-      },
-      async resolve(_, { title, participants }) {
-        const userRepo = AppDataSource.getRepository(Account);
-        const participantAccounts = await userRepo.findBy({ username: In(participants) });
-
-        if (participantAccounts.length !== participants.length) {
-          throw new Error('Some participants not found');
-        }
-
-        const threadRepo = AppDataSource.getRepository(Thread);
-        const newThread = threadRepo.create({ title, participants: participantAccounts });
-        await threadRepo.save(newThread);
-
-        return newThread;
-      },
+        participants: { type: new GraphQLList(GraphQLString) }
+      },      
+      resolve: threadResolvers.createThread as GraphQLFieldResolver<any, Context>
     },
+    addMessage: {
+      type: ThreadType,
+      args: {
+        threadId: { type: GraphQLString },
+        message: { type: GraphQLString },
+        username: { type: GraphQLString },
+      },
+      resolve: async (_, { threadId, message, username }) => {
+        const threadRepo = AppDataSource.getRepository(Thread);
+        const userRepo = AppDataSource.getRepository(Account);
+        const messageRepo = AppDataSource.getRepository(Message);
+    
+        const thread = await threadRepo.findOne({
+          where: { id: parseInt(threadId, 10) }, 
+          relations: ["messages", "messages.author"], 
+        });
+    
+        if (!thread) throw new Error("Thread not found");
+    
+        const user = await userRepo.findOne({ where: { username } });
+        if (!user) throw new Error("User not found");
+    
+        const newMessage = messageRepo.create({
+          text: message,
+          author: user,
+          thread,
+          creationDate: new Date(),
+          timestamp: new Date(),
+        });
+    
+        await messageRepo.save(newMessage);
+    
+        const updatedThread = await threadRepo.findOne({
+          where: { id: thread.id },
+          relations: ["messages", "messages.author", "participants"],
+        });
+
+        if (updatedThread) {
+          updatedThread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        }
+        
+        return updatedThread;
+      }
+    }    
   },
 });
-
 
 const schema = new GraphQLSchema({ query: RootQuery, mutation: Mutation });
 
