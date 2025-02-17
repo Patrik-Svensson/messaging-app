@@ -45,11 +45,6 @@ Ensure you have the following installed on your machine:
    npm install
    ```
 
-3. Create a `.env.local` file in the root of the frontend directory and configure:
-   ```env
-   NEXT_PUBLIC_API_URL=http://localhost:3000
-   ```
-
 ## Running the App
 
 ### Backend Development Mode
@@ -66,16 +61,20 @@ cd frontend
 npm run dev
 ```
 
-## Formatting Code
-Ensure consistent code formatting with Prettier:
-```sh
-# For backend
-cd backend
-npm run format
+### Basic Messaging
+Once the frontend is running, open http://localhost:3000 in incognito mode to start messaging.
 
-# For frontend
-cd frontend
-npm run format
+These are three users that can be used to login:
+
 ```
+const initialUsers = [
+  { username: 'john_doe', password: 'password123' },
+  { username: 'jane_smith', password: 'securepassword' },
+  { username: 'fred_andersson', password: 'hej123' },
+];
+```
+
+
+
 
 
