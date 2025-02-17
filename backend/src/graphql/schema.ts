@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import { Thread } from '../entities/Thread';
 import { UserType } from './types/UserType';
 import { Message } from '../entities/Message';
+import { io, users } from '../app';
 
 interface Context {
   user: {
@@ -92,54 +93,72 @@ const Mutation = new GraphQLObjectType({
       type: ThreadType,
       args: {
         title: { type: GraphQLString },
-        participants: { type: new GraphQLList(GraphQLString) }
+        participants: { type: new GraphQLList(GraphQLString) },
+        creator: { type: GraphQLString },
       },      
       resolve: threadResolvers.createThread as GraphQLFieldResolver<any, Context>
     },
     addMessage: {
       type: ThreadType,
       args: {
-        threadId: { type: GraphQLString },
-        message: { type: GraphQLString },
-        username: { type: GraphQLString },
+          threadId: { type: GraphQLString },
+          message: { type: GraphQLString },
+          username: { type: GraphQLString },
       },
       resolve: async (_, { threadId, message, username }) => {
-        const threadRepo = AppDataSource.getRepository(Thread);
-        const userRepo = AppDataSource.getRepository(Account);
-        const messageRepo = AppDataSource.getRepository(Message);
-    
-        const thread = await threadRepo.findOne({
-          where: { id: parseInt(threadId, 10) }, 
-          relations: ["messages", "messages.author"], 
-        });
-    
-        if (!thread) throw new Error("Thread not found");
-    
-        const user = await userRepo.findOne({ where: { username } });
-        if (!user) throw new Error("User not found");
-    
-        const newMessage = messageRepo.create({
-          text: message,
-          author: user,
-          thread,
-          creationDate: new Date(),
-          timestamp: new Date(),
-        });
-    
-        await messageRepo.save(newMessage);
-    
-        const updatedThread = await threadRepo.findOne({
-          where: { id: thread.id },
-          relations: ["messages", "messages.author", "participants"],
-        });
+          const threadRepo = AppDataSource.getRepository(Thread);
+          const userRepo = AppDataSource.getRepository(Account);
+          const messageRepo = AppDataSource.getRepository(Message);
+  
+          const thread = await threadRepo.findOne({
+              where: { id: parseInt(threadId, 10) },
+              relations: ["messages", "messages.author"],
+          });
+  
+          if (!thread) throw new Error("Thread not found");
+  
+          const user = await userRepo.findOne({ where: { username } });
+          if (!user) throw new Error("User not found");
+  
+          const newMessage = messageRepo.create({
+              text: message,
+              author: user,
+              thread,
+              creationDate: new Date(),
+              timestamp: new Date(),
+          });
+  
+          await messageRepo.save(newMessage);
+  
+          const updatedThread = await threadRepo.findOne({
+              where: { id: thread.id },
+              relations: ["messages", "messages.author", "participants"],
+          });
+  
+          if (updatedThread) {
+              updatedThread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          }
+  
+          // Emit the new message event with the generated ID
+          if (updatedThread === null) {
+            return
+          }           
 
-        if (updatedThread) {
-          updatedThread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-        }
+          updatedThread.participants.forEach(participantName => {
+            if (username === participantName.username) {
+                return;
+            }
         
-        return updatedThread;
+            const recipientSocketId = users.get(participantName.username); // Lookup socket ID using username
+        
+            if (recipientSocketId) {
+                io.to(recipientSocketId).emit('newMessage', { message: newMessage, threadId: updatedThread.id });
+            }
+        });
+  
+          return updatedThread;
       }
-    }    
+    }  
   },
 });
 

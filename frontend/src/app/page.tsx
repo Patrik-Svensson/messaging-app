@@ -27,8 +27,6 @@ const Home = () => {
 
     const data = await response.json();
 
-    console.log(data)
-
     if (data?.data?.login?.username) {
       localStorage.setItem('username', username);
 

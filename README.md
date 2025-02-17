@@ -30,6 +30,7 @@ Ensure you have the following installed on your machine:
     DB_PASSWORD
     DB_NAME
     PORT
+    JWT_SECRET
    ```
 
 ## Installation Frontend

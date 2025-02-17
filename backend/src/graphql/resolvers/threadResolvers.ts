@@ -3,6 +3,7 @@ import { Thread } from '../../entities/Thread';
 import { Account } from '../../entities/Account';
 import { In } from 'typeorm';
 import { GraphQLFieldResolver } from 'graphql';
+import { io, users } from '../../app'; 
 
 interface Context {
   user: {
@@ -22,7 +23,6 @@ export const threadResolvers = {
       }
     };
 
-    // If a username is provided, filter by participants' usernames
     if (username) {
       whereCondition.participants = {
         username: In([username])
@@ -56,19 +56,36 @@ export const threadResolvers = {
     return threads;
   }) as GraphQLFieldResolver<any, Context, { userId: string }>,
 
-  createThread: (async (_: any, args: { title: string; participants: string[] }, context: Context) => {
+  createThread: (async (_: any, args: { title: string; participants: string[]; creator: string }, context: Context) => {
     const userRepo = AppDataSource.getRepository(Account);
     const participantAccounts = await userRepo.findBy({ username: In(args.participants) });
-  
+
     if (participantAccounts.length !== args.participants.length) {
-      throw new Error('Some participants not found');
+        throw new Error('Some participants not found');
     }
-  
+
     const threadRepo = AppDataSource.getRepository(Thread);
-    const newThread = threadRepo.create({ title: args.title, participants: participantAccounts });
+    const newThread = threadRepo.create({ 
+        title: args.title, 
+        participants: participantAccounts,
+        messages: [] 
+    });
     await threadRepo.save(newThread);
-  
+
+    args.participants.forEach(username => {
+        if (username === args.creator) {
+            return;
+        }
+    
+        const recipientSocketId = users.get(username); 
+
+        if (recipientSocketId) {
+            io.to(recipientSocketId).emit('newThread', newThread);
+        }
+    });
+
     return newThread;
-  }) as GraphQLFieldResolver<any, Context, { title: string; participants: string[] }>
+}) as GraphQLFieldResolver<any, Context, { title: string; participants: string[]; creator: string }>
+
   
-}; 
+}

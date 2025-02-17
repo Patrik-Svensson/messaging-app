@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, gql, useApolloClient } from '@apollo/client';
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:3001"); 
 
 const GET_USERS = gql`
   query getUsersExcluding($username: String!) {
@@ -14,12 +17,21 @@ const GET_USERS = gql`
 `;
 
 const CREATE_THREAD = gql`
-  mutation CreateThread($title: String!, $participants: [String!]!) {
-    createThread(title: $title, participants: $participants) {
+  mutation CreateThread($title: String!, $participants: [String!]!, $creator: String!) {
+    createThread(title: $title, participants: $participants, creator: $creator) {
       id
       title
       participants {
         username
+      }
+      messages {
+        id
+        text
+        timestamp
+        author {
+          id
+          username
+        }
       }
     }
   }
@@ -34,6 +46,7 @@ const ADD_MESSAGE = gql`
         text
         timestamp
         author {
+          id
           username
         }
       }
@@ -55,6 +68,7 @@ const GET_THREADS = gql`
         text
         timestamp
         author {
+            id
             username
         }
       }
@@ -100,21 +114,80 @@ const MessageDashboard = () => {
     const users = usersData?.getUsersExcluding || [];
 
     useEffect(() => {
+        if (!username) return; 
+    
         const fetchThreads = async () => {
             try {
                 const { data } = await client.query({
                     query: GET_THREADS,
                     variables: { username },
+                    fetchPolicy: 'network-only', 
                 });
-
+    
                 setThreads(data.getThreads);
             } catch (error) {
                 console.error('Error fetching threads:', error);
             }
         };
-
+    
         fetchThreads();
     }, [client, username]);
+
+
+    useEffect(() => {
+        if (!username) return; 
+    
+        socket.emit("register", { username });
+    
+        return () => {
+            socket.emit("unregisterUser", { username }); 
+        };
+    }, [username]);
+    
+    
+
+    useEffect(() => {
+        socket.on("newMessage", ({ message, threadId }) => {
+            setThreads((prevThreads) => {
+                const updatedThreads = [...prevThreads];
+                const threadIndex = updatedThreads.findIndex(t => t.id === threadId.toString());
+                if (threadIndex !== -1) {
+                    updatedThreads[threadIndex] = {
+                        ...updatedThreads[threadIndex],
+                        messages: [...updatedThreads[threadIndex].messages, message],
+                    };
+                }
+                return updatedThreads;
+            });
+        });
+    
+        return () => {
+            socket.off("newMessage");
+        };
+    }, []);
+
+    useEffect(() => {
+        socket.on("newThread", (newThread) => {
+            const convertedThread: Thread = {
+                id: newThread.id.toString(),
+                title: newThread.title,
+                participants: newThread.participants,
+                messages: newThread.messages
+            }
+
+            setThreads((prevThreads) => {
+                if (prevThreads.some(thread => thread.id === newThread.id)) {
+                    return prevThreads; 
+                }
+    
+                return [...prevThreads, convertedThread];
+            });
+        });
+    
+        return () => {
+            socket.off("newThread");
+        };
+    }, []);
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -133,7 +206,7 @@ const MessageDashboard = () => {
                         username: username,
                     }
                 });
-    
+                
                 setThreads(prevThreads => 
                     prevThreads.map(thread => 
                         thread.id === activeThread 
@@ -141,7 +214,6 @@ const MessageDashboard = () => {
                             : thread
                     )
                 );
-                
     
                 setInput('');
             } catch (error) {
@@ -158,19 +230,22 @@ const MessageDashboard = () => {
                 variables: {
                     title: threadTitle,
                     participants: [...selectedUsers, username],
+                    creator: username
                 }
             });
-            
-            window.location.reload();
-            
+
+            const newThread: Thread = data.createThread;
+
+            setThreads(prev => [...prev, data.createThread]);
         } catch (error) {
             console.error('Error creating thread:', error);
         }
-
+    
         setIsNewThreadModalOpen(false);
         setSelectedUsers([]);
         setThreadTitle('');
     };
+    
 
     return (
         <div className="flex h-screen bg-gray-100">
